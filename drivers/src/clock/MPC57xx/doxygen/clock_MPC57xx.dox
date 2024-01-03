@@ -1,0 +1,100 @@
+/**
+@defgroup clock_manager_MPC57xx Clock Manager Driver
+@brief This module covers the device-specific clock_manager functionality implemented for MPC57xx SOC.
+@ingroup clock_manager
+<p>
+The support for MPC57xx consist in the following items:
+-# Clock names enumeration
+\ref clock_names_t is an enumeration which contains all clock names which are relevant for MPC57xx.
+-# Submodule configuration structures
+    - \ref mc_me_config_t
+    - \ref cgm_config_t
+    - \ref cgmcs_config_t
+    - \ref cmu_config_t
+
+## Hardware background ##
+
+Features of clock_manager module include the following clock sources:
+-# With MPC5748G, MPC5746C family
+    - 128 KHz Slow internal RC oscillator (SIRC)
+    - 32 kHz Slow external oscillator (SXOSC)
+    - 16 MHz internal RC oscillator (FIRC)
+    - 8 - 40 MHz Fast External Oscillator (FXOSC)
+    - Up to 160 MHz. Phased Lock Loop - PHI0 (PLL0-PHI0)
+    - Up to 80 MHz.  Phased Lock Loop - PHI1 (PLL0-PHI1)
+-# With MPC5744P family
+    - 16 MHz Internal RC oscillator (IRCOSC)
+    - 8 - 40 MHz External oscillator (XOSC)
+    - Up to 200 MHz. Phased Lock Loop 0 - PHI0 (PLL0-PHI0)
+    - Up to 156 MHz. Phased Lock Loop 0 - PHI1 (PLL0-PHI1)
+    - Up to 200 MHz. Phased Lock Loop 1 (PLL1)
+-# With S32R274,S32R372 family
+    - 16 MHz Internal RC oscillator (IRCOSC)
+    - 8 - 40 MHz External oscillator (XOSC)
+    - Up to 625 MHz. Phased Lock Loop 0 - PHI0 (PLL0-PHI0)
+    - Up to 156 MHz. Phased Lock Loop 0 - PHI1 (PLL0-PHI1)
+    - Up to 625 MHz. Phased Lock Loop 1 (PLL1)
+    - 320 MHz. System Dual Phased Lock Loop (SDPLL)
+-# With MPC5746R family
+    - 16 MHz Internal RC oscillator (IRCOSC)
+    - 8 - 40 MHz External oscillator (XOSC)
+    - Up to 400 MHz. Phased Lock Loop 0 - PHI0 (PLL0-PHI0)
+    - Up to 300 MHz. Phased Lock Loop 0 - PHI1 (PLL0-PHI1)
+    - Up to 200 MHz. Phased Lock Loop 1 (PLL1)
+
+## How to use the CLOCK_MANAGER driver in your application ##
+
+In order to be able to use the clock_manager in your application,
+<b>CLOCK_DRV_Init</b> function has to be called. The same function is called
+when another configuration is loaded and clock configuration is updated.
+
+## Code Example ##
+
+This is an example for configuration and get a frequency:
+
+@code
+  CLOCK_SYS_Init(g_clockManConfigsArr,
+                 CLOCK_MANAGER_CONFIG_CNT,
+                 g_clockManCallbacksArr,
+                 CLOCK_MANAGER_CALLBACK_CNT);
+
+  CLOCK_SYS_UpdateConfiguration(0, CLOCK_MANAGER_POLICY_FORCIBLE);
+  CLOCK_SYS_UpdateConfiguration(1, CLOCK_MANAGER_POLICY_FORCIBLE);
+@endcode
+
+## Notes ##
+1. With platform S32R274 max frequency of core base on below variant performance table.
+For more details, please refer to part specification in DataSheet.
+
+    |    Perf (MHz)       |    Z7      |     Z7      |     Z4      |     Z4      |
+    |:-------------------:|:----------:|:-----------:|:-----------:|:-----------:|
+    |         K           |    240     |    240      |     120     |     120     |
+    |         V           |    200     |    200      |     100     |     100     |
+    |         J           |    266     |    266      |     133     |     133     |
+
+## Integration guideline ##
+
+### Compilation units ###
+
+The following files need to be compiled in the project:
+\verbatim
+${S32SDK_PATH}\platform\drivers\src\clock\MPC57xx\clock_manager_MPC57xx.c
+\endverbatim
+
+### Include path ###
+
+The following paths need to be added to the include path of the toolchain:
+\verbatim
+${S32SDK_PATH}\platform\drivers\inc\
+\endverbatim
+
+### Preprocessor symbols ###
+
+No special symbols are required for this component
+
+### Dependencies ###
+
+\ref interrupt_manager
+
+</p>
+*/

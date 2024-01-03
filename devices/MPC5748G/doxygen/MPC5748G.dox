@@ -1,0 +1,50 @@
+/** 
+
+@ingroup soc_support
+@defgroup soc_support_MPC5748G MPC5748G System Files
+@{
+@brief This module covers the SoC support file for MPC5748G.
+<p>
+SystemInit method is called automatically from start-up code to do the minimum setup of the SoC.
+It enables cores, initializes interrupt controller for current core and grants access to peripherals for DMA.
+</p><p>
+SystemCoreClockUpdate method can be used at any time to update \ref SystemCoreClock. It evaluates the clock register settings and calculates
+the current core clock.
+</p>
+<p>
+SystemSoftwareReset method initiates a system reset.
+</p>
+<p>
+Small data area supported (SDA).
+</p>
+<p>
+Cache: to enable I/D cache, the asm preprocessor macro should be defined.
+- ICACHE_ENABLE=1: enable instruction cache.
+- DCACHE_ENABLE=1: enable data cache.
+</p>
+@}
+
+@ingroup soc_header
+@defgroup soc_header_MPC5748G  MPC5748G SoC Header file
+@{
+@brief This module covers the MPC5748G SoC Header file
+@}
+
+@ingroup soc_header_MPC5748G
+@defgroup Peripheral_access_layer_MPC5748G Peripheral access layer for MPC5748G
+@{
+@brief This module covers all memory mapped register available on SoC
+@}
+
+@ingroup soc_header_MPC5748G
+@defgroup Interrupt_vector_numbers_MPC5748G Interrupt vector numbers for MPC5748G
+@{
+@brief This module covers interrupt number allocation.
+@}
+
+@ingroup soc_header_MPC5748G
+@defgroup Backward_Compatibility_Symbols_MPC5748G Backward Compatibility Symbols for MPC5748G
+@{
+@brief This module covers backward compatibility symbols.
+@}
+*/

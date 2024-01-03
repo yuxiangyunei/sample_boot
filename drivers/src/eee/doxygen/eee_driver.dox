@@ -1,0 +1,253 @@
+/*!
+@defgroup eee EEPROM Emulation (EEE)
+@brief EEPROM Emulation driver provides the general EEE APIs
+@details
+EEPROM (electrically erasable programmable read only memory), which can be byte or word programmed and erased, is often used in automotive
+electronic control units (ECUs).
+This flexibility for program and erase operations makes it suitable for data storage of application variables that must be maintained when power is
+removed and need to be updated individually during run-time. For the devices without EEPROM memory, the block-erasable flash memory can be used to
+emulate the EEPROM through EEPROM emulation software.
+
+The EEPROM emulation driver implements both fix length and variable-length data record schemes. Two or more blocks of flash can be used to implement
+the emulation scheme.
+The EEPROM functionalities to be emulated include organizing data records; initializing; de-initializing; reporting EEPROM status; reading; writing;
+and deleting data records.
+
+## Integration guideline ##
+
+### Compilation units ###
+
+The following files need to be compiled in the project:
+\verbatim
+${S32SDK_PATH}\middleware\eee\source\eee_common.c
+${S32SDK_PATH}\middleware\eee\source\eee_common.h
+${S32SDK_PATH}\middleware\eee\source\eee_driver.c
+\endverbatim
+
+### Include path ###
+
+The following paths need to be added to the include path of the toolchain:
+\verbatim
+${S32SDK_PATH}\middleware\eee\include\eee_driver.h
+\endverbatim
+
+### Compile symbols ###
+
+No special symbols are required for this component
+
+### Dependencies ###
+
+\ref clock_manager
+\ref interrupt_manager
+\ref flash_c55
+
+##EEPROM Emulation Operation:##
+
+##Initialize EEPROM##
+Before using EEPROM, it needs to be initialized. The initialization will deal with two kinds of situations:
+- The first time of using EEPROM: In this case, the EEE driver will format all blocks then assign one as the active block and the others as alternative blocks.
+  At last, clears the contents of the cache table if enabled.
+- Continue using EEPROM: In this case, the EEE driver should determine which block is the current active one, do recovery and update blank space for all emulated blocks.
+  Then, it fills the cache table with expected data if enabled.
+Initializing EEPROM also does the brownout handling to recover data from accident of power on reset or power down.
+
+  ~~~~~{.c}
+    /*---------------------------------------------------------------------*/
+    /* Init eeprom */
+    /*---------------------------------------------------------------------*/
+    eee_state_t state;
+    g_usrCnt = 0U;
+    ret = EEE_DRV_InitEeprom(&userConf, &state);
+    if(ret != STATUS_SUCCESS)
+    {
+        return ret;
+    }
+  ~~~~~
+
+##Write EEPROM Data##
+Because the flash memory cell cannot be erased individually, EEE driver must write a new data record with same data ID for the updated value to the
+EEPROM blank area.
+The followings describe several special situations, which may take place as well as corresponding handling during writing operation:
+    - Program operation fails: If program operation fails during programming block information including block indicator and erase cycle, the proper
+      error code will be returned and stop writing.
+      If program operation fails during programming data record, this data will be re-programmed by skipping a suitable address until successfully.
+      If this operation consecutively takes place with too many times such that there is no enough space to write on available blocks,
+      the error of EE_ERROR_NO_ENOUGH_SPACE may be returned and finish writing.
+    - Immediate data request: If an immediate data requested while an erase operation is going on, this high voltage operation need to be suspended
+      to serve that request.
+      Otherwise, new normal data requested while an erase operation is going on, it will be returned STATUS_EEE_HVOP_INPROGRESS error.
+    - Swapping: After several record writings, the active block may not have enough free space for a new data record. It is needed to copy all the
+      latest data records to alternative block to clean up the EEPROM.
+      This procedure is called “swapping” and after swapping, the alternative block will become the new active block and the old active block will
+      be formatted as new alternative block.
+
+  ~~~~~{.c}
+    /*---------------------------------------------------------------------*/
+    /* Write eeprom data records */
+    /*---------------------------------------------------------------------*/
+    static uint32_t s_swapNum = 0;
+    bool stop_flag = false; /* control when to stop writing records*/
+    bool re_init_flag = false; /* control if it needs to re-init eeprom system*/
+    id = 4;
+
+    if (state.sizeField == 0U)
+    {
+        size = state.dataSize;
+    }
+
+    while (stop_flag == false)
+    {
+        if (state.sizeField != 0U)
+        {
+            size = id;
+            if(size > BUFFER_SIZE_BYTE)
+            {
+                size = BUFFER_SIZE_BYTE;
+            }
+        }
+
+        /* Init buffer*/
+        for (i = 0; i < size; i++)
+        {
+            *(volatile uint8_t*)(buffer + i) = (uint8_t)(i+size);
+        }
+
+        g_usrCnt = 0U;
+        ret = EEE_DRV_WriteEeprom(id,
+                                  size,
+                                  (uint32_t)buffer,
+                                  EEE_IMMEDIATE_NONE);
+        if(ret == STATUS_SUCCESS)
+        {
+            /*  Call to EEE_DRV_MainFunction if there is a swap operation */
+            while (g_eraseStatusFlag == EEE_ERASE_IN_PROGRESS)
+            {
+                stop_flag = true;
+                ret = EEE_DRV_MainFunction();
+            }
+            if (true == stop_flag)
+            {
+
+                s_swapNum++;
+                if (s_swapNum < 2 )
+                {
+                    stop_flag = false;
+                }
+            }
+            if (g_eraseStatusFlag == EEE_ERASE_SWAP_ERROR)
+            {
+                re_init_flag = true;
+            }
+        }
+        else
+        {
+            re_init_flag = true;
+        }
+
+        if (re_init_flag == true)
+        {
+            g_usrCnt = 0U;
+            /* Call to EEE_DRV_InitEeeprom to try recovering eeprom system */
+            ret = EEE_DRV_InitEeprom(&userConf, &state);
+            if(ret != STATUS_SUCCESS)
+            {
+                return ret;
+            }
+        }
+        id = (++id)%0x50;
+    }
+  ~~~~~
+
+##Read EEPROM Data##
+Read routine will first search in cache table if enabled. If found, it should retrieve address of that record from cache table.
+Otherwise, it will identify the latest copy of data record by scanning the entire the current active block from the first data record
+to the blank region in case of adopting variable length record schemes. If that record ID is not found in current active block,
+it will search in entire all other active blocks in the ageing order.  For fixed length record scheme, to increase searching performance,
+an optimized search algorithm is implemented to enable search from blankSpace address back to beginning of blocks.
+Finally, it will return STATUS_EEE_ERROR_DATA_NOT_FOUND if there is no data ID in cache table as well as all active blocks.
+
+  ~~~~~{.c}
+    /*---------------------------------------------------------------------*/
+    /* Read data from eeprom                                               */
+    /*---------------------------------------------------------------------*/
+    for(i = 0; i < (BUFFER_SIZE_BYTE / C55_WORD_SIZE); i++)
+    {
+        buffer[i] = 0xFFFFFFFFU;
+    }
+
+    g_usrCnt = 0U;
+    ret = EEE_DRV_ReadEeprom(0x10U, size, (uint32_t)buffer, EEE_IMMEDIATE_NONE);
+    if(ret != STATUS_SUCCESS)
+    {
+        return ret;
+    }
+  ~~~~~
+
+##Delete EEPROM Data##
+If does not need a data record, user can delete it from the emulated EEPROM system. EEE driver does NOT physically remove this record at the time
+users want to delete it.
+Instead, EED will only change the record’s state to “DELETE” so that it is regarded as un-used data and will be removed from emulated EEPROM in
+block swapping.
+However, the deleted data record can be re-written into the EEPROM. The read routine will determine the latest data record.
+
+  ~~~~~{.c}
+    /*---------------------------------------------------------------------*/
+    /* Delete data from eeprom                                             */
+    /*---------------------------------------------------------------------*/
+    g_usrCnt = 0U;
+    ret = EEE_DRV_DeleteRecord(0x10U, EEE_IMMEDIATE_NONE);
+    if(ret != STATUS_SUCCESS)
+    {
+        return ret;
+    }
+
+    for(i = 0; i < (BUFFER_SIZE_BYTE / C55_WORD_SIZE); i++)
+    {
+        buffer[i] = 0xFFFFFFFFU;
+    }
+
+    g_usrCnt = 0U;
+    ret = EEE_DRV_ReadEeprom(0x10U, size, (uint32_t)buffer, EEE_IMMEDIATE_NONE);
+    if(ret == STATUS_SUCCESS)
+    {
+        return ret;
+    }
+  ~~~~~
+
+##Report EEPROM Status##
+The block erasing cycles will be retrieved from the current active block and it reflects the erasure times since the EEPROM has been setup. It is
+only an approximate number and will be set to one when first time using EEPROM.
+
+  ~~~~~{.c}
+    /*---------------------------------------------------------------------*/
+    /* Report eeprom status */
+    /*---------------------------------------------------------------------*/
+    ret = EEE_DRV_ReportEepromStatus(&i);
+    if(ret != STATUS_SUCCESS)
+    {
+        return ret;
+    }
+  ~~~~~
+
+##Remove EEPROM##
+If the emulated EEPROM is not required, the flash memory for EEPROM emulation should be released. The removing routine will erase all the blocks
+used for emulation
+
+  ~~~~~{.c}
+    /* Erase all eeprom blocks*/
+    ret = EEE_DRV_RemoveEeprom();
+    if(ret != STATUS_SUCCESS)
+    {
+        return ret;
+    }
+  ~~~~~
+
+## Important Note
+1. Ensure the EEE blocks are unlocked before using for EEPROM emulation.
+2. Call to EEE_DRV_MainFunction if there is a write EEPROM operation.
+3. An EEE block can be a flash block or a combination of several consecutive flash blocks with constrain that they must belong in the same block space.
+4. When the flash memory address has an error due to ECC, the user need to setup the environment to return the next instruction in the case which the EEE_ERR_IVOR_EXCEPTION macro is enabled. This code depend on the different compiler and it must be handled the exception interrupt in your application.
+5. To optimize the swapping time in the EEE_DRV_InitEeprom function when the brownout occurs while a swapping is in-progress. The user need to re-define the "SWAP_CACHE_SIZE" in the eee_common.c file. The size of swap cache
+should be equal the size of cache table in bytes.
+
+@}*/

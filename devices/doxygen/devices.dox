@@ -1,0 +1,123 @@
+/** 
+@defgroup soc_support SoC Support
+@{
+@brief This module covers SoC support files
+
+@details This section describes the files that are used for supporting various SoCs.
+
+The support files are:
+-# Linker files
+-# Start-up files
+-# SVD file
+-# Header files
+
+### Linker files ###
+
+Linker files are used to control the linkage part of the project compilation and contain details regarding the following:
+-# memory areas definition (type  and ranges)
+-# data and code segments definition and their mapping to the memory areas.
+
+Linker configuration files are provided for all supported linkers. Please see \ref Build_Tools for details.
+
+Small Data Area (SDA):
+- Small Data Area optimization uses two special data areas, RAM SDA and ROM SDA, each containing 64 KB of data.
+  - RAM SDA:
+    - .sdata: initialized read/write small data.
+    - .sbss: uninitialized read/write small data.
+  - ROM SDA:
+    - .sdata2: small constant data.
+- Some devices support small data area, which means that variables smaller than a specified threshold will be placed in a special section, for optimization purposes.
+- To force certain small variables to be placed in other areas, use #pragma directive. \n
+E.g.
+~~~~~{.c}
+    /* If set the SDA threshold value to 8 */
+    uint8_t foo_a = 1U; /* Goes into sdata section */
+
+    /* GHS */
+#if defined(__ghs__)
+    #pragma ghs startdata
+    uint8_t foo_b = 1U; /* Goes into data section */
+    __attribute__((section (".customSection"))) uint8_t foo_c = 1U; /* Goes into customSection section */
+    #pragma ghs enddata
+#endif
+
+    /* DCC */
+#if defined(__DCC__)
+    #pragma use_section DATA foo_b
+    uint8_t foo_b = 1U; /* Goes into data section */
+    #pragma section customSection "" ".customSection"
+    #pragma use_section customSection foo_c
+    uint8_t foo_c = 1U; /* Goes into customSection section */
+#endif
+
+    /* GCC */
+#if defined(__GCC__)
+    __attribute__((section (".data"))) uint8_t foo_b = 1U; /* Goes into data section */
+    __attribute__((section (".customSection"))) uint8_t foo_c = 1U; /* Goes into customSection section */
+#endif
+~~~~~
+
+### Start-up files ###
+
+Start-up files are used to control the SoC bring-up part and contain:
+-# interrupt vector allocation
+-# start-up code and routines
+
+Start-up files are provided for all supported compilers. Please see \ref Build_Tools for details.
+
+### SVD file ###
+
+SVD file contains details about registers and can be used with an IDE to allow mapping of memory location to the register definition and information.
+
+### Header file ###
+
+For each SoC there are two header files provided in the SDK:
+-# <SoC_name>.h
+-# <SoC_name>_features.h
+
+The <SoC_name>.h file contains information related to registers that is used by the SDK drivers and code.
+The <SoC_name>_features.h contains information related to the integration of modules in the SoC.
+
+## Integration guideline ##
+ 
+### Compilation units ###
+
+The following files need to be compiled in the project:
+\verbatim
+${S32SDK_PATH}\platform\devices\<SoC_name>\startup\system_<SoC_name>.c
+${S32SDK_PATH}\platform\devices\startup.c 
+${S32SDK_PATH}\platform\devices\<SoC_name>\startup\<Toolchain>\startup_<SoC_name>.S
+
+\endverbatim
+
+### Include path ###
+
+The following paths need to be added to the include path of the toolchain:
+\verbatim
+${S32SDK_PATH}\platform\devices
+${S32SDK_PATH}\platform\devices\<SoC_name>\
+${S32SDK_PATH}\platform\devices\startup\
+${S32SDK_PATH}\platform\devices\<SoC_name>\include\
+${S32SDK_PATH}\platform\devices\common 
+\endverbatim
+
+### Preprocessor symbols ###
+
+\verbatim
+CPU_S32K144HFT0VLLT for S32K144
+CPU_<SoC_name>
+\endverbatim
+
+### Dependencies ###
+
+No special dependencies are required for this component
+@}
+
+@defgroup soc_header SoC Header file (SoC Header )
+@{
+@brief This module covers SoC Header file
+
+@details This section describes the functionality supported by the header file.
+For usage please see \ref soc_header_usage
+@}
+*/

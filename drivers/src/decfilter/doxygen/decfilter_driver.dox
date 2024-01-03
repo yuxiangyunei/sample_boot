@@ -1,0 +1,112 @@
+/*!
+ * @defgroup decfilter_driver Decimation Filter (DECFILTER)
+ * @ingroup decfilter
+ * @brief Decimation Filter Peripheral Driver.
+ *
+ * The MPC5746R device has two instances of the Decimation Filter and MPC5777C has 12 instances. All instances can be used in cascaded mode of operation to obtain a more complex filtering function.
+ *
+ * On <b>MPC5745R</b> there is no direct hardware interface from the SAR and Sigma-Delta ADCs to the Decimation Filters on the device.
+ * Transfer of ADC conversion results to the Decimation Filters for application processing is handled entirely by the DMA and CPU.
+ * All interrupts are connected to the Interrupt Controller according to Interrupt sources.
+ * Similarly all DMA requests are connected to appropriate DMA channel muxes according to DMA request mapping
+ *
+ * On <b>MPC5777C</b> the DECFILTER module instances on this chip interact with the EQADC and eTPU modules.
+ * On this chip, the parallel side interfaces (PSIs) of the DECFILTER modules are connected to the EQADC modules:\n
+ * • PSI0 inputs of all DECFILTER instances are connected to EQADC_A.\n
+ * • PSI1 inputs of all DECFILTER instances are connected to EQADC_B.\n
+ * On this chip, select channels from eTPU module instances function as the Zero, Integrate, Read, and Halt inputs to the integrators of DECFILTER module instances. Please check the SIU_DECFILx registers
+ * in the MPC5777C Reference Manual for details on how to configure:
+ *  - \ref decfilter_integrator_config_t.zirSelection
+ *  - \ref decfilter_integrator_config_t.haltSelection.
+ *  - \ref decfilter_config_t.triggerSelection 
+ *
+ * The decimation filter is a dedicated hardware block, designed to decimate fixed point sample conversion results. An interface is provided for use by the CPU, allowing setup of the filter parameters and read/write of the configuration registers and filter samples.
+ *
+ * Each sample arrives at the decimation filter with an identifier tag and associated commands. The input information is decoded by the RX and control logic subblocks.
+ * When receiving a filtering command, the data is transferred to the filter tap register's sub-block and is processed by the filter using the MAC (Multiply and Accumulate) unit, the coefficient register, and the control logic sub-blocks.
+ * The result is then returned to the master block by the TX sub-block, accompanied by thecorresponding tag information that provides an address for the data.
+ *
+ * An integrator unit independently accumulates the values of filter outputs. The integration can be restricted to time windows defined by hardware signals or software
+ *
+ * ## Features of the DECFILTER include: ##
+ *    - Selectable 4th order IIR filter, or an 8th order FIR filter
+ *    - Input/output with 16-bit (fixed point) two's complement signed values
+ *    - Internal taps with 16-bit (feed-forward portion of first IIR) and 24-bit (feedback portion) resolutions (fixed point) for two's complement signed value
+ *    - 24-bit programmable filter coefficients (fixed point) for two's complement signed value
+ *    - MAC unit with 51-bit fixed point accumulator
+ *    - Convergent rounding methodology
+ *    - Two's complement overflow or saturation selection
+ *    - 58 clock cycles to process the input
+ *    - Implements two local slave-bus interface to two master blocks (e.g. the eQADC blocks)
+ *    - Input and output buffers with DMA capability
+ *    - Slave-bus interface to device
+ *    - Filter taps access for debug
+ *    - Filter initialization (flush) and stabilization (prefill) commands
+ *    - Timestamp support
+ *    - Decimation controlled by an internal counter or from an on-chip independent trigger signal (triggered output result).
+ *    - Integrator unit accumulates filter output values, signaled or absolute, with 32-bit resolution. The integrator can be controlled by software or hardware signals.
+ *    - Cascade of two or more individual blocks to compose a more complex filter.
+ *
+ * ## Driver consideration ##
+ * The DECFILTER Peripheral Driver provides access to all DECFILTER hardware features.
+ * The DECFILTER Driver provides access to all features, but not all need to be configured to use the DECFILTER.
+ * The initialization is transparent for the user - DECFILTER parameters are grouped in decfilter_config_t based on the affected functionality (not on the type of registers to which they correspond)
+ * In initialization function, input filter is enabled and is running a soft-reset because is necesssary.
+ * After initialization the decfilter is ready to receive data from PSI0/PSI1 or from the device slave-bus interface.
+ *
+ * The driver also provides DECFILTER_DRV_GetDefaultConfig() which retrieves the default configuration - please refer to function description for details on usage.
+ *
+ * NOTE: when DMA support is enabled (for either filling input data buffer or draining output data buffer) DECFILTER_DRV_Init() configures the selected DMA driver virtual channels and required settings in DECFILTER module.
+ * However, before calling DECFILTER_DRV_Init(), the user needs to initialize the DMA driver using EDMA_DRV_Init() and allocate the virtual channel numbers selected in decfilter_config_t. when using DMA for input data buffer filling, after DECFILTER_DRV_Init() function, need to prepare the input data buffer which is used as input by DMA, and then call EDMA_DRV_StartChannel() function to start DMA transfer. This is only required when using DMA for input data transfer. For output data draining, the DMA channels are enabled by DECFILTER_DRV_Init().
+ *
+ * ## Interrupt handling ##
+ * The DECFILTER Driver in S32 SDK does not use interrupts internally. These can be defined by the user application.
+ * There are two ways to add an DECFILTER interrupt:
+ *  1. Using the weak symbols defined by start-up code: define functions with name
+ *      of corresponding weak symbols, and they will be already registered as interrupt handlers.
+ *      If the methods corresponding to weak symbols
+ *      <tt>DECFILTER<b>x</b>_Handler(void)</tt> (x denotes instance number)
+ *      are not defined, the linker uses a default ISR. An error will be generated if
+ *      methods with the same name are defined multiple times. This method works
+ *      regardless of the placement of the interrupt vector table (Flash or RAM).
+ *  2. Using the Interrupt Manager's <tt>INT_SYS_InstallHandler()</tt> method. This can
+ *      be used to dynamically change the ISR at run-time. This method works
+ *      only if the interrupt vector table is located in RAM (S32 SDK behavior).
+ *
+ * the interrupt request can be issued under any of the following conditions : <br>
+ *    • when a word of input data is received<br>
+ *    • when a word of output data is available<br>
+ *    • when an error has occurred.<br>
+ *
+ * ### IMPORTANT NOTE ###
+ * Flags <tt>DECFILTER_INTERRUPT_INPUT_DATA/DECFILTER_INTERRUPT_OUTPUT_DATA</tt> are not used to trigger interrupts, only to announce the input/output data event.
+ * For input/output interrupt request use <tt>DECFILTER_INTERRUPT_INPUT_BUFFER/DECFILTER_INTERRUPT_OUTPUT_BUFFER</tt> flags.
+ *
+ * ## Clocking and pin configuration ##
+ * The DECFILTER Driver does not handle clock setup (done by Clock Manager) or any kind of pin configuration (done by PinSettings module). The driver assumes that correct clock
+ * configurations have been made, so it is the user's responsibility to set up clocking and pin configurations correctly.
+ *
+ * ## Integration guideline ##
+ *
+ * ### Compilation units ###
+ *
+ * The following files need to be compiled in the project:
+ * \verbatim
+  ${S32SDK_PATH}\platform\drivers\src\decfilter\decfilter_driver.c
+  \endverbatim
+ *
+ * ### Include path ###
+ *
+ * The following paths need to be added to the include path of the toolchain:
+ * \verbatim
+  ${S32SDK_PATH}\platform\drivers\inc\
+  \endverbatim
+ *
+ * ### Preprocessor symbols ###
+ *
+ * No special symbols are required for this component
+ *
+ * ### Dependencies ###
+ * \ref edma
+ *
+ */
